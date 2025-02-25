@@ -11,8 +11,6 @@ A Go library that provides a reliable, monotonic timestamp, initialized with the
 - 🔧 Supports custom NTP server configuration via environment variable.
 - 🏎️ Lightweight with no unnecessary background tasks.
 
----
-
 ## ⚙️ Installation
 ```
 go get github.com/fgrzl/timestamp
