@@ -26,8 +26,6 @@ jobs:
 
       - name: setup go
         uses: actions/setup-go@v4
-        with:
-          go-version: 'latest'
 
       - name: install dependencies
         run: go mod tidy
