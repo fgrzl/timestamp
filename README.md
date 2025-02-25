@@ -2,13 +2,9 @@
 [![Dependabot Updates](https://github.com/fgrzl/timestamp/actions/workflows/dependabot/dependabot-updates/badge.svg)](https://github.com/fgrzl/timestamp/actions/workflows/dependabot/dependabot-updates)
 
 # timestamp
-
 A Go library that provides a reliable, monotonic timestamp, initialized with the current time from an NTP server or the system clock. Once initialized at application startup, the clock uses Go's built-in monotonic timekeeping to ensure consistent and increasing timestamps throughout the application's lifecycle.
 
----
-
 ## 🚀 Features
-
 - ✅ Monotonic timestamp generation based on Go's built-in monotonic clock.
 - 🌐 Fetch initial time from configurable NTP servers.
 - 🔒 Fallback to system time if NTP servers are unreachable.
@@ -18,14 +14,11 @@ A Go library that provides a reliable, monotonic timestamp, initialized with the
 ---
 
 ## ⚙️ Installation
-
 ```
 go get github.com/fgrzl/timestamp
 ```
 
 ## 🛠️ Usage
-Basic Example
-
 ```go
 package main
 
