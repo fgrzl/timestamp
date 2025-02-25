@@ -12,7 +12,7 @@ A Go library that provides a reliable, monotonic timestamp, initialized with the
 - 🏎️ Lightweight with no unnecessary background tasks.
 
 ## ⚙️ Installation
-```
+```bash
 go get github.com/fgrzl/timestamp
 ```
 
