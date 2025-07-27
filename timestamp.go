@@ -3,7 +3,8 @@ package timestamp
 import (
 	"encoding/binary"
 	"fmt"
-	"log"
+	"io"
+	"log/slog"
 	"net"
 	"os"
 	"sync"
@@ -16,18 +17,63 @@ const TimeServer = "FGRZL_TIME_SERVER"
 var (
 	globalClock *clock
 	once        sync.Once
+	initErr     error
+	logger      *slog.Logger
 )
 
-// Clock holds the start time for the monotonic clock.
+// clock holds the start time for the monotonic clock.
+// All fields are immutable after initialization for thread safety.
 type clock struct {
-	startTime int64 // Unix timestamp in milliseconds
-	start     time.Time
+	startTime int64        // Unix timestamp in milliseconds
+	start     time.Time    // Monotonic reference point
+	mu        sync.RWMutex // Protects against potential races during reads
+}
+
+func init() {
+	// Initialize with a default logger that can be overridden
+	logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelWarn, // Only log warnings and errors by default
+	})).With("component", "timestamp")
+}
+
+// SetLogger allows users to control logging behavior.
+// Pass nil to disable logging entirely.
+func SetLogger(l *slog.Logger) {
+	if l == nil {
+		// Create a logger that discards all output
+		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+		return
+	}
+	logger = l.With("component", "timestamp")
+}
+
+// DisableLogging is a convenience function to disable all logging output.
+func DisableLogging() {
+	SetLogger(nil)
 }
 
 // Initialize the global clock once during application startup.
 func init() {
 	once.Do(func() {
-		t := getCurrentTime()
+		defer func() {
+			if r := recover(); r != nil {
+				// If initialization panics, fall back to system time
+				logger.Error("initialization panic, falling back to system time",
+					"error", r)
+				globalClock = &clock{
+					startTime: time.Now().UnixMilli(),
+					start:     time.Now(),
+				}
+				initErr = fmt.Errorf("initialization panic: %v", r)
+			}
+		}()
+
+		t, err := getCurrentTime()
+		if err != nil {
+			initErr = err
+			// Even on error, we still have a valid fallback time
+		}
+
 		globalClock = &clock{
 			startTime: t.UnixMilli(),
 			start:     t,
@@ -36,9 +82,24 @@ func init() {
 }
 
 // GetTimestamp returns a timestamp using monotonic elapsed time.
+// This function is thread-safe and guaranteed to return monotonically increasing values.
 func GetTimestamp() int64 {
+	if globalClock == nil {
+		// Fallback if initialization somehow failed completely
+		return time.Now().UnixMilli()
+	}
+
+	globalClock.mu.RLock()
+	defer globalClock.mu.RUnlock()
+
 	elapsed := time.Since(globalClock.start)
 	return globalClock.startTime + elapsed.Milliseconds()
+}
+
+// GetInitializationError returns any error that occurred during initialization.
+// Returns nil if initialization was successful.
+func GetInitializationError() error {
+	return initErr
 }
 
 // GetTimeServer fetches the configured NTP server from the environment.
@@ -55,35 +116,44 @@ var ntpServers = []string{
 }
 
 // getCurrentTime attempts to fetch time from NTP or falls back to system time.
-func getCurrentTime() time.Time {
+// Returns the time and any error encountered (for logging purposes).
+func getCurrentTime() (time.Time, error) {
 	server := GetTimeServer()
 
 	if server == "system" {
-		return time.Now()
+		return time.Now(), nil
 	}
 
 	if server == "default" || server == "" {
+		var lastErr error
 		for _, s := range ntpServers {
 			if t, err := ntpTime(s); err == nil {
-				return t
+				return t, nil
 			} else {
-				log.Printf("NTP server %s failed: %v", s, err)
+				logger.Warn("NTP server failed",
+					"server", s,
+					"error", err)
+				lastErr = err
 			}
 		}
-		log.Println("All NTP servers failed. Falling back to system time.")
-		return time.Now()
+		logger.Warn("All NTP servers failed, falling back to system time",
+			"last_error", lastErr)
+		return time.Now(), fmt.Errorf("all NTP servers failed, last error: %w", lastErr)
 	}
 
 	ntpTime, err := ntpTime(server)
 	if err != nil {
-		log.Printf("Failed to fetch time from NTP server (%s): %v. Falling back to system time.", server, err)
-		return time.Now()
+		logger.Warn("Failed to fetch time from NTP server, falling back to system time",
+			"server", server,
+			"error", err)
+		return time.Now(), fmt.Errorf("NTP server %s failed: %w", server, err)
 	}
 
-	return ntpTime
+	return ntpTime, nil
 }
 
 // ntpTime fetches the current time from the specified NTP server.
+// Includes proper timeout handling and validates NTP response.
 func ntpTime(server string) (time.Time, error) {
 	addr, err := net.ResolveUDPAddr("udp", server)
 	if err != nil {
@@ -96,8 +166,9 @@ func ntpTime(server string) (time.Time, error) {
 	}
 	defer conn.Close()
 
-	// Set a timeout for the connection
-	conn.SetDeadline(time.Now().Add(5 * time.Second))
+	// Set a reasonable timeout for the NTP request
+	deadline := time.Now().Add(5 * time.Second)
+	conn.SetDeadline(deadline)
 
 	req := make([]byte, 48)
 	req[0] = 0x1B // NTP version 3, client mode
@@ -111,10 +182,30 @@ func ntpTime(server string) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("failed to read response: %w", err)
 	}
 
+	// Validate NTP response
+	if len(resp) < 48 {
+		return time.Time{}, fmt.Errorf("invalid NTP response length: %d", len(resp))
+	}
+
+	// Extract transmit timestamp (bytes 40-47)
 	seconds := binary.BigEndian.Uint32(resp[40:44])
 	fraction := binary.BigEndian.Uint32(resp[44:48])
 
+	// Validate that we got a reasonable response
+	if seconds == 0 {
+		return time.Time{}, fmt.Errorf("invalid NTP response: zero timestamp")
+	}
+
 	ntpSeconds := float64(seconds) + float64(fraction)/0x100000000
-	unixSeconds := ntpSeconds - 2208988800 // NTP epoch offset
-	return time.Unix(int64(unixSeconds), 0), nil
+	unixSeconds := ntpSeconds - 2208988800 // NTP epoch offset (1900-01-01 to 1970-01-01)
+
+	ntpTime := time.Unix(int64(unixSeconds), 0)
+
+	// Sanity check: ensure the time is reasonable (not too far in past/future)
+	now := time.Now()
+	if ntpTime.Before(now.Add(-24*time.Hour)) || ntpTime.After(now.Add(24*time.Hour)) {
+		return time.Time{}, fmt.Errorf("NTP time %v is too far from system time %v", ntpTime, now)
+	}
+
+	return ntpTime, nil
 }

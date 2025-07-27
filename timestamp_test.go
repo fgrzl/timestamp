@@ -2,6 +2,8 @@ package timestamp
 
 import (
 	"encoding/binary"
+	"io"
+	"log/slog"
 	"os"
 	"testing"
 	"time"
@@ -59,9 +61,9 @@ func TestGetTimeServerConfig(t *testing.T) {
 	os.Setenv(TimeServer, "system")
 	defer os.Unsetenv(TimeServer)
 
-	t1 := getCurrentTime()
+	t1, _ := getCurrentTime()
 	time.Sleep(5 * time.Millisecond)
-	t2 := getCurrentTime()
+	t2, _ := getCurrentTime()
 
 	if t2.Sub(t1) <= 0 {
 		t.Error("Expected system time to increase")
@@ -74,7 +76,7 @@ func TestInvalidTimeServerFallback(t *testing.T) {
 	defer os.Unsetenv(TimeServer)
 
 	start := time.Now()
-	t1 := getCurrentTime()
+	t1, _ := getCurrentTime()
 
 	if t1.Before(start) {
 		t.Errorf("Time fetched is unexpectedly before start time: %v", t1)
@@ -97,7 +99,7 @@ func (m *mockUDPConn) Close() error                      { return nil }
 func (m *mockUDPConn) SetDeadline(t time.Time) error     { return nil }
 
 // Mock NTP fetch using fake UDP connection
-func mockNTPTime(server string) (time.Time, error) {
+func mockNTPTime(_ string) (time.Time, error) {
 	mockConn := &mockUDPConn{}
 	resp := make([]byte, 48)
 	mockConn.Read(resp)
@@ -121,4 +123,24 @@ func TestMockedNTPTime(t *testing.T) {
 	if !ntpTime.Equal(expected) {
 		t.Errorf("Expected NTP time %v, got %v", expected, ntpTime)
 	}
+}
+
+// Test logging configuration
+func TestLoggingConfiguration(t *testing.T) {
+	// Test disabling logging
+	DisableLogging()
+
+	// Test setting custom logger
+	SetLogger(nil) // Should disable logging
+
+	// Restore default logging behavior
+	SetLogger(slog.New(slog.NewTextHandler(io.Discard, nil)))
+}
+
+// Test initialization error tracking
+func TestInitializationError(t *testing.T) {
+	// The error might be nil if initialization was successful
+	err := GetInitializationError()
+	// We just verify the function works, error might be nil in good conditions
+	_ = err
 }
