@@ -168,7 +168,9 @@ func ntpTime(server string) (time.Time, error) {
 
 	// Set a reasonable timeout for the NTP request
 	deadline := time.Now().Add(5 * time.Second)
-	conn.SetDeadline(deadline)
+	if err := conn.SetDeadline(deadline); err != nil {
+		logger.Warn("failed to set deadline", "error", err)
+	}
 
 	req := make([]byte, 48)
 	req[0] = 0x1B // NTP version 3, client mode
