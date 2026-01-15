@@ -102,7 +102,9 @@ func (m *mockUDPConn) SetDeadline(t time.Time) error     { return nil }
 func mockNTPTime(_ string) (time.Time, error) {
 	mockConn := &mockUDPConn{}
 	resp := make([]byte, 48)
-	mockConn.Read(resp)
+	if _, err := mockConn.Read(resp); err != nil {
+		return time.Time{}, err
+	}
 
 	seconds := binary.BigEndian.Uint32(resp[40:44])
 	fraction := binary.BigEndian.Uint32(resp[44:48])
