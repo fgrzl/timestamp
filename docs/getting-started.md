@@ -14,28 +14,44 @@ import "github.com/fgrzl/timestamp"
 ts1 := timestamp.GetTimestamp()
 // ... work ...
 ts2 := timestamp.GetTimestamp()
-// ts2 >= ts1 always
+// ts2 >= ts1 always within this process
 ```
 
-Timestamps are millisecond-resolution `int64` values suitable for sorting and storage keys.
+Timestamps are millisecond-resolution `int64` values.
 
 ## Initialization
 
-The library initializes automatically on first use. For explicit control or custom NTP servers, call the package initialization API before generating timestamps (see package godoc for `Initialize` and environment variables such as `TIMESTAMP_NTP_SERVERS`).
+The clock initializes automatically when the package is **imported** (`init` + `sync.Once`). There is no public `Initialize()` function.
 
-If NTP is unreachable, initialization falls back to the system clock and logs the outcome.
+Check `timestamp.GetInitializationError()` if you need to detect NTP fallback failures.
 
-## Environment
+## Configuration (`FGRZL_TIME_SERVER`)
 
-Configure NTP endpoints when defaults are unsuitable in your network:
+| Value | Behavior |
+|-------|----------|
+| unset or `default` | Try built-in NTP server list, then system clock |
+| `system` | Use system clock only (no NTP) |
+| any other string | Single NTP host (e.g. `pool.ntp.org:123`) |
 
 ```bash
-export TIMESTAMP_NTP_SERVERS="pool.ntp.org,time.google.com"
+export FGRZL_TIME_SERVER=default
+# or
+export FGRZL_TIME_SERVER=time.google.com:123
+```
+
+There is no comma-separated multi-server env var; multiple hosts are only used in the built-in default list.
+
+## Logging
+
+```go
+timestamp.SetLogger(myLogger)
+// or
+timestamp.DisableLogging()
 ```
 
 ## Thread safety
 
-`GetTimestamp()` is safe for concurrent use from any goroutine after initialization completes.
+`GetTimestamp()` is safe for concurrent use after package init completes.
 
 ## Tests
 
@@ -43,4 +59,4 @@ export TIMESTAMP_NTP_SERVERS="pool.ntp.org,time.google.com"
 go test ./...
 ```
 
-Use test helpers or dependency injection patterns in your app if you need deterministic timestamps in unit tests.
+See the root [README](../README.md) for design trade-offs and when not to use this library.
