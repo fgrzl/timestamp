@@ -127,14 +127,14 @@ func getCurrentTime() (time.Time, error) {
 	if server == "default" || server == "" {
 		var lastErr error
 		for _, s := range ntpServers {
-			if t, err := ntpTime(s); err == nil {
+			t, err := ntpTime(s)
+			if err == nil {
 				return t, nil
-			} else {
-				logger.Warn("NTP server failed",
-					"server", s,
-					"error", err)
-				lastErr = err
 			}
+			logger.Warn("NTP server failed",
+				"server", s,
+				"error", err)
+			lastErr = err
 		}
 		logger.Warn("All NTP servers failed, falling back to system time",
 			"last_error", lastErr)
@@ -164,7 +164,7 @@ func ntpTime(server string) (time.Time, error) {
 	if err != nil {
 		return time.Time{}, fmt.Errorf("failed to connect: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Set a reasonable timeout for the NTP request
 	deadline := time.Now().Add(5 * time.Second)

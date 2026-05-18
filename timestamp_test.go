@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"io"
 	"log/slog"
-	"os"
 	"testing"
 	"time"
 )
@@ -58,8 +57,7 @@ func TestNTPTimeFailureFallback(t *testing.T) {
 
 // Test fetching time using environment configuration
 func TestGetTimeServerConfig(t *testing.T) {
-	os.Setenv(TimeServer, "system")
-	defer os.Unsetenv(TimeServer)
+	t.Setenv(TimeServer, "system")
 
 	t1, _ := getCurrentTime()
 	time.Sleep(5 * time.Millisecond)
@@ -72,8 +70,7 @@ func TestGetTimeServerConfig(t *testing.T) {
 
 // Test invalid NTP server environment fallback to default
 func TestInvalidTimeServerFallback(t *testing.T) {
-	os.Setenv(TimeServer, "invalid.ntp.server:123")
-	defer os.Unsetenv(TimeServer)
+	t.Setenv(TimeServer, "invalid.ntp.server:123")
 
 	start := time.Now()
 	t1, _ := getCurrentTime()
