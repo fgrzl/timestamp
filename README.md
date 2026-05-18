@@ -54,6 +54,10 @@ This library solves a specific problem: **ensuring monotonic timestamp ordering 
 go get github.com/fgrzl/timestamp
 ```
 
+## Documentation
+
+Guides: **[docs/](docs/README.md)** — [overview](docs/overview.md), [getting started](docs/getting-started.md)
+
 ## 🛠️ Usage
 
 ### Basic Usage
